@@ -54,10 +54,10 @@ summary(householdpower)
 
 ## Convert 'Active' and 'Reactive' to watt-hour
 #householdpower <- householdpower %>% 
-#mutate(Global_active_consumption = ((householdpower$Global_active_power*1000)/60))
+  #mutate(Global_active_consumption = ((householdpower$Global_active_power*1000)/60))
 
 #householdpower <- householdpower %>% 
-#mutate(Global_reactive_consumption = ((householdpower$Global_reactive_power*1000)/60))
+  #mutate(Global_reactive_consumption = ((householdpower$Global_reactive_power*1000)/60))
 
 ## Convert 'Sub-meters' to kWh
 householdpower <- householdpower %>%
@@ -76,6 +76,12 @@ householdpower <- householdpower %>%
            householdpower$Sub_metering_3kWh)
 
 ## Create 'Month' and 'Year' columns
+householdpower$Hour <- hour(householdpower$Time)
+householdpower <- householdpower[,c(ncol(householdpower), 1:(ncol(householdpower)-1))]
+
+householdpower$Day <- day(householdpower$Date_Time)
+householdpower <- householdpower[,c(ncol(householdpower), 1:(ncol(householdpower)-1))]
+
 householdpower$Month <- month(householdpower$Date_Time)
 householdpower <- householdpower[,c(ncol(householdpower), 1:(ncol(householdpower)-1))]
 
@@ -255,12 +261,12 @@ ggplot(data=hpc_monthly, aes(hpc_monthly$Month_Abb,group=1))+
   #theme_bw()+
   scale_y_continuous(labels = function(x) format(x, scientific =FALSE)) +
   #scale_colour_manual(name='',
-  #values=c('Active_Power_kWh'="#CC6666", # Kitchen',
-  #'Reactive_Power_kWh'="blue"), #Laundry Room'="blue",
-  #'Heater'="darkgreen",
-  #guide='legend') +
+                      #values=c('Active_Power_kWh'="#CC6666", # Kitchen',
+                               #'Reactive_Power_kWh'="blue"), #Laundry Room'="blue",
+                      #'Heater'="darkgreen",
+                      #guide='legend') +
   facet_wrap( ~ Year )
-#facet_grid(facets = Year ~ ., margins = FALSE)
+                      #facet_grid(facets = Year ~ ., margins = FALSE)
 
 ## Histograms
 options(scipen = 999)
@@ -291,15 +297,13 @@ lines(x = householdpower$Date_Time, y = householdpower$Sub_metering_3, col = "bl
 legend("topright", legend = c("Sub_metering_1", "Sub_metering_2", "Sub_metering_3"), 
        lty = 1, col = c("black", "red", "blue"))
 
-#### Visualize Data ####
+#### Date/Time
 
 ## Create a 'Weekday' column
-
 householdpower$Weekday <- weekdays(as.Date(householdpower$Date_Time))
 
 ## Create a 'Quarter' column
 householdpower$Quarter<- quarter(householdpower$Date_Time)
-householdpower <- householdpower[,c(ncol(householdpower), 1:(ncol(householdpower)-1))]
 
 #household$SeasonWNames <-""
 #household$SeasonWNames[household$Season == "1"] <- "Winter"
@@ -307,16 +311,36 @@ householdpower <- householdpower[,c(ncol(householdpower), 1:(ncol(householdpower
 #household$SeasonWNames[household$Season == "3"] <- "Summer"
 #household$SeasonWNames[household$Season == "4"] <- "Autmn"
 
+## Timezone and Daylight Savings
+
+HPC <- mutate(HPC, Daylight = ifelse(Date_Time > as_datetime('2007-03-25 01:59:00') &
+                                       Date_Time < as_datetime('2007-10-28 02:00:00'),
+                       Date_Time + hours(1),
+                ifelse(Date_Time > as_datetime('2008-03-30 01:59:00') &
+                         Date_Time < as_datetime('2008-10-26 02:00:00'),
+                       Date_Time + hours(1),
+                ifelse(Date_Time > as_datetime('22009-03-29 01:59:00') &
+                         Date_Time < as_datetime('2009-10-25 02:00:00'),
+                       Date_Time + hours(1),
+                ifelse(Date_Time > as_datetime('2010-03-28 01:59:00') &
+                         Date_Time < as_datetime('2010-10-31 02:00:00'),
+                       Date_Time + hours(1)
+                       )
+                )
+                )
+                )
+              )
+
 #### Treating NA's ####
 
 ## Visualize distribution of NA gapsizes
 householdpower$Global_active_powerkWh %>% plotNA.distributionBar
 
 #plotNA.gapsize(household$Global_active_powerkWh, limit = , byTotalNA = FALSE, legend = TRUE,
-#col = c("indianred", "steelblue"),
-#xlab = "Ranking of the different gap sizes", ylab = "Number",
-#main = "Occurrence of gap sizes (NAs in a row)", cex.names = 0.7,
-#horiz = FALSE, axes = TRUE, beside = TRUE, las = 1)
+               #col = c("indianred", "steelblue"),
+               #xlab = "Ranking of the different gap sizes", ylab = "Number",
+               #main = "Occurrence of gap sizes (NAs in a row)", cex.names = 0.7,
+               #horiz = FALSE, axes = TRUE, beside = TRUE, las = 1)
 
 ## Count the frequency of missing values
 is.na(householdpower$Global_active_powerkWh)
@@ -326,18 +350,18 @@ sum(is.na(householdpower$Global_active_powerkWh))
 #plotNA.gapsize(householdpower)
 
 #householdpower %>%
-#rowwise %>%
-#summarise(NA_per_row = sum(is.na(.)))
+  #rowwise %>%
+  #summarise(NA_per_row = sum(is.na(.)))
 
 ## New dataset for treating NA's
-HPC <- householdpower %>% select(Quarter, Year_Month, Year, Month, Date_Time, Date, Time,
-                                 Sub_metering_1kWh, Sub_metering_2kWh, Sub_metering_3kWh, Global_active_powerkWh,
-                                 Global_reactive_powerkWh, Household_consumption_kWh, Weekday, Missing_reading)
-head(HPC)
+HPC <- householdpower %>% select(Date_Time, Date, Time, Weekday, Global_active_powerkWh, 
+                                 Global_reactive_powerkWh, Household_consumption_kWh, 
+                                 Sub_metering_1kWh, Sub_metering_2kWh, Sub_metering_3kWh)
 
-HPC$Missing_reading <- is.na(HPC)
-HPC %>%
-  mutate()
+HPC$Missing_reading <- is.na(householdpower)
+householdpower$Missing_reading <- is.na(householdpower)
+
+head(HPC)
 
 
 
