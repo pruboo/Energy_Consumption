@@ -11,6 +11,9 @@ if(!require("RColorBrewer")){install.packages("RColorBrewer")}
 install.packages("chron")
 install.packages("bdvis")
 
+if(!require("imputeTS")){install.packages("imputeTS", dependencies = c("Depends", "Suggests"))}
+install.packages("uroot")
+
 #### Load Data ####
 
 library(caret)
@@ -22,6 +25,9 @@ library(readr)
 library(RColorBrewer)
 library(chron)
 library(bdvis)
+library(imputeTS)
+library(fracdiff)
+library(uroot)
 source("https://raw.githubusercontent.com/iascchen/VisHealth/master/R/calendarHeat.R")
 
 setwd("/Users/PROUD/Dropbox/ubiqum/ubiqum_Part_3/Task_3.1_Define_Data_Science_Process")
@@ -44,13 +50,14 @@ householdpower <- householdpower[,c(ncol(householdpower), 1:(ncol(householdpower
 
 head(householdpower)
 str(householdpower)
+summary(householdpower)
 
 ## Convert 'Active' and 'Reactive' to watt-hour
 #householdpower <- householdpower %>% 
-  #mutate(Global_active_consumption = ((householdpower$Global_active_power*1000)/60))
+#mutate(Global_active_consumption = ((householdpower$Global_active_power*1000)/60))
 
 #householdpower <- householdpower %>% 
-  #mutate(Global_reactive_consumption = ((householdpower$Global_reactive_power*1000)/60))
+#mutate(Global_reactive_consumption = ((householdpower$Global_reactive_power*1000)/60))
 
 ## Convert 'Sub-meters' to kWh
 householdpower <- householdpower %>%
@@ -229,26 +236,31 @@ ggplot(data = hpc_monthly, aes(x = Month_Abb, y = Global_reactive_powerkWh, grou
 
 ## Monthly consumption by year
 
-ggplot(data=hpc_monthly, aes(hpc_monthly$Month,group=1))+
+hpc_monthly$Month_Abb <- factor(hpc_monthly$Month_Abb, 
+                                levels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
+
+ggplot(data=hpc_monthly, aes(hpc_monthly$Month_Abb,group=1))+
   #geom_line(aes(y = hpc_monthly$Sub_metering_1kWh, color="Kitchen")) +
-  #geom_line(aes(y = hpc_monthly$Sub_metering_2kWh, color="Laundry Room")) +
-  #geom_line(aes(y = hpc_monthly$Sub_metering_3kWh, color="Heater")) +
+  #geom_line(aes(y = hpc_monthly$Sub_metering_2kWh, color="Laundry")) +
+  #geom_line(aes(y = hpc_monthly$Sub_metering_3kWh, color="Heating/Cooling")) +
   geom_line(aes(y = hpc_monthly$Global_active_powerkWh, color="Active_Power_kWh")) +
   geom_line(aes(y = hpc_monthly$Global_reactive_powerkWh, color="Reactive_Power_kWh")) +
-  xlab("Year") +
+  xlab("Month") +
   ylab("kWh") +
-  ggtitle("Global Active Power by Time")
-  scale_x_discrete(labels =  month.abb) +
+  ggtitle("Global Active and Reactive Power by Month") +
+  #scale_x_discrete(labels =  month.abb) +
   #scale_x_date(labels = date_format("%b"))+
   #theme(panel.background = element_rect(fill = rgb(248, 236, 212, maxColorValue = 255)))+
-  theme_bw()+
-  scale_y_continuous(labels = function(x) format(x, scientific =FALSE))+
-  scale_colour_manual(name='',
-                      values=c('Active_Power_kWh'="#CC6666", # Kitchen',
-                               'Reactive_Power_kWh'="blue"), #Laundry Room'="blue",
-                      #'Heater'="darkgreen",
-                      guide='legend') + facet_wrap( ~ Year )
-                      #facet_grid(facets = Year ~ ., margins = FALSE)
+  #theme_bw()+
+  scale_y_continuous(labels = function(x) format(x, scientific =FALSE)) +
+  #scale_colour_manual(name='',
+  #values=c('Active_Power_kWh'="#CC6666", # Kitchen',
+  #'Reactive_Power_kWh'="blue"), #Laundry Room'="blue",
+  #'Heater'="darkgreen",
+  #guide='legend') +
+  facet_wrap( ~ Year )
+#facet_grid(facets = Year ~ ., margins = FALSE)
 
 ## Histograms
 options(scipen = 999)
@@ -281,5 +293,51 @@ legend("topright", legend = c("Sub_metering_1", "Sub_metering_2", "Sub_metering_
 
 #### Visualize Data ####
 
+## Create a 'Weekday' column
 
-Test
+householdpower$Weekday <- weekdays(as.Date(householdpower$Date_Time))
+
+## Create a 'Quarter' column
+householdpower$Quarter<- quarter(householdpower$Date_Time)
+householdpower <- householdpower[,c(ncol(householdpower), 1:(ncol(householdpower)-1))]
+
+#household$SeasonWNames <-""
+#household$SeasonWNames[household$Season == "1"] <- "Winter"
+#household$SeasonWNames[household$Season == "2"] <- "Spring"
+#household$SeasonWNames[household$Season == "3"] <- "Summer"
+#household$SeasonWNames[household$Season == "4"] <- "Autmn"
+
+#### Treating NA's ####
+
+## Visualize distribution of NA gapsizes
+householdpower$Global_active_powerkWh %>% plotNA.distributionBar
+
+#plotNA.gapsize(household$Global_active_powerkWh, limit = , byTotalNA = FALSE, legend = TRUE,
+#col = c("indianred", "steelblue"),
+#xlab = "Ranking of the different gap sizes", ylab = "Number",
+#main = "Occurrence of gap sizes (NAs in a row)", cex.names = 0.7,
+#horiz = FALSE, axes = TRUE, beside = TRUE, las = 1)
+
+## Count the frequency of missing values
+is.na(householdpower$Global_active_powerkWh)
+sum(is.na(householdpower$Global_active_powerkWh))
+
+#plotNA.distribution(householdpower$Global_active_powerkWh)
+#plotNA.gapsize(householdpower)
+
+#householdpower %>%
+#rowwise %>%
+#summarise(NA_per_row = sum(is.na(.)))
+
+## New dataset for treating NA's
+HPC <- householdpower %>% select(Quarter, Year_Month, Year, Month, Date_Time, Date, Time,
+                                 Sub_metering_1kWh, Sub_metering_2kWh, Sub_metering_3kWh, Global_active_powerkWh,
+                                 Global_reactive_powerkWh, Household_consumption_kWh, Weekday, Missing_reading)
+head(HPC)
+
+HPC$Missing_reading <- is.na(HPC)
+HPC %>%
+  mutate()
+
+
+
