@@ -297,7 +297,7 @@ lines(x = householdpower$Date_Time, y = householdpower$Sub_metering_3, col = "bl
 legend("topright", legend = c("Sub_metering_1", "Sub_metering_2", "Sub_metering_3"), 
        lty = 1, col = c("black", "red", "blue"))
 
-#### Date/Time
+#### Date/Time####
 
 ## Create a 'Weekday' column
 householdpower$Weekday <- weekdays(as.Date(householdpower$Date_Time))
@@ -356,12 +356,83 @@ sum(is.na(householdpower$Global_active_powerkWh))
 ## New dataset for treating NA's
 HPC <- householdpower %>% select(Date_Time, Date, Time, Weekday, Global_active_powerkWh, 
                                  Global_reactive_powerkWh, Household_consumption_kWh, 
-                                 Sub_metering_1kWh, Sub_metering_2kWh, Sub_metering_3kWh)
-
-HPC$Missing_reading <- is.na(householdpower)
-householdpower$Missing_reading <- is.na(householdpower)
-
+                                 Sub_metering_1kWh, Sub_metering_2kWh, Sub_metering_3kWh, 
+                                 Voltage, Global_intensity)
 head(HPC)
 
+HPC$Missing_reading <- is.na(HPC)
+
+householdpower2 <- householdpower
+householdpower2 <- na.locf(householdpower2, na.rm = FALSE, maxgap = 1440)
+
+#HPC_3$B<-na.locf(HPC_3$Global_reactive_kwh, na.rm = FALSE, maxgap = 1440)
+
+
+#HPC$Missing <- is.na(HPC$Global_active_powerkWh)
+
+Missing_reading <- HPC %>%
+  filter(is.na(Global_active_powerkWh)) %>%
+  select(Date_Time, Date) %>%
+  group_by(Date_Time) %>%
+  count(Date_Time)
+
+HPC1 <- left_join(HPC, Missing_reading, by = "Date_Time")
+
+HPC1$n[is.na(HPC1$n)] <- 0
+HPC1$n <- as.numeric(HPC1$n)
+
+cumsum(c(diff(HPC1$n)==+1,0)) * HPC1$n
+rle(cumsum(c(diff(HPC1$n)==+1,0)) * HPC1$n)
+
+
+NA_consecutive <- rle(HPC1$n)
+summary(NA_consecutive)
+View(NA_consecutive)
+
+rollForward <- function(x){
+  curr <- 0
+  for (i in 1:length(HPC$Global_active_powerkWh)){
+    if (is.na(x[i])){
+      x[i] <- curr
+    }
+    else{
+      curr <- x[i]
+    }
+  }
+  return(x)
+}
+
+HPCI<-mutate(HPCI, Global_Consumption_kwh_2= ifelse(n >= 1000, 0, 
+                                                    rollForward(Global_Consumption_kwh) ))
+HPCI<-mutate(HPCI, Global_reactive_kwh_2= ifelse(n >= 1000, 0, 
+                                                 rollForward(Global_reactive_kwh) ))
+
+HPCI<-mutate(HPCI, Global_intensity_2= ifelse(n >= 1000, 0, 
+                                              rollForward(Global_intensity) ))
+HPCI<-mutate(HPCI, Voltage_2= ifelse(n >= 1000, 0, 
+                                     rollForward(Voltage) ))
+HPCI<-mutate(HPCI, Submetter1_kwh_2= ifelse(n >= 1000, 0, 
+                                            rollForward(Submetter1_kwh) ))
+HPCI<-mutate(HPCI, Submetter2_kwh_2= ifelse(n >= 1000, 0, 
+                                            rollForward(Submetter2_kwh) ))
+HPCI<-mutate(HPCI, Submetter3_kwh_2= ifelse(n >= 1000, 0, 
+                                            rollForward(Submetter3_kwh) ))
+
+## Timezone and Daylight Savings
+HPC <- mutate(HPC, Daylight = 
+                ifelse(Date_Time > as_datetime('2007-03-25 01:59:00') &
+                         Date_Time < as_datetime('2007-10-28 02:00:00'),
+                       Date_Time + hours(1),
+                       ifelse(Date_Time > as_datetime('2008-03-30 01:59:00') &
+                                Date_Time < as_datetime('2008-10-26 02:00:00'),
+                              Date_Time + hours(1),
+                              ifelse(Date_Time > as_datetime('22009-03-29 01:59:00') &
+                                       Date_Time < as_datetime('2009-10-25 02:00:00'),
+                                     Date_Time + hours(1),
+                                     ifelse(Date_Time > as_datetime('2010-03-28 01:59:00') &
+                                              Date_Time < as_datetime('2010-10-31 02:00:00'),
+                                            Date_Time + hours(1))))))
+
+#### Treating NA's ####
 
 
