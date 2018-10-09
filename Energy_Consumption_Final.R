@@ -16,13 +16,13 @@ HHPC <- HouseholdPower
 
 ## 1.1 Rename Variables
 HHPC <- HHPC %>%
-  dplyr::rename(Global = Global_active_power, Reactive = Global_reactive_power,
+  dplyr::rename(Active = Global_active_power, Reactive = Global_reactive_power,
                 Intensity = Global_intensity, Kitchen = Sub_metering_1, 
                 Laundry = Sub_metering_2, WHAC = Sub_metering_3)
 
 ## 1.2 Convert Units to kWh
 HHPC <- HHPC %>%
-  mutate(Global = Global/60,
+  mutate(Active = Active/60,
          Reactive = Reactive/60,
          Kitchen = Kitchen/1000,
          Laundry = Laundry/1000, 
@@ -30,19 +30,19 @@ HHPC <- HHPC %>%
 
 ## 1.3 Calculate 'Unregistered' Household Energy Usage 
 HHPC <- HHPC %>%
-  mutate(Unregistered=Global-Kitchen-Laundry-WHAC)
+  mutate(Unregistered=Active-Kitchen-Laundry-WHAC)
 # fix negative numbers #
 
 ## 1.4 Calculate Efficiency
 HHPC <- HHPC %>%
-  mutate(Efficiency=Global/(Voltage*Intensity))
+  mutate(Efficiency = Active/(Voltage*Intensity))
 
 #### 2. Preprocess Time Data ####
 
 ## 2.1 Create 'Date_Time' and Change 'Date' to Date
-  HHPC$Date_Time <- dmy_hms(paste(HHPC$Date, HHPC$Time))
-  HHPC$Date <- as.Date(HHPC$Date, "%d/%m/%Y")
-  HHPC <- HHPC[,c(ncol(HHPC), 1:(ncol(HHPC)-1))]
+HHPC$Date_Time <- dmy_hms(paste(HHPC$Date, HHPC$Time))
+HHPC$Date <- as.Date(HHPC$Date, "%d/%m/%Y")
+HHPC <- HHPC[,c(ncol(HHPC), 1:(ncol(HHPC)-1))]
 
 ## 2.2 Daylight Savings
 
@@ -97,7 +97,7 @@ summary(HHPC) #25,979 NA's
 
 # count missing values by date #
 missing_calendar <- HHPC
-missing_calendar$d_miss <- ifelse(is.na(missing_calendar$Global), 1, 0)
+missing_calendar$d_miss <- ifelse(is.na(missing_calendar$Active), 1, 0)
 missing_calendar <- missing_calendar %>% 
   group_by(Date) %>%
   dplyr::summarize(missing = sum(d_miss))
@@ -105,7 +105,7 @@ missing_calendar <- missing_calendar %>%
 # missing data calendar heat map #
 library("chron")
 source("https://raw.githubusercontent.com/iascchen/VisHealth/master/R/calendarHeat.R")
-calendarHeat1 <- calendarHeat(HHPC$Date, HHPC$Global, 
+calendarHeat1 <- calendarHeat(HHPC$Date, HHPC$Active, 
                               varname="Global Active Power (kWh)",
                               color="r2b")
 
@@ -114,25 +114,78 @@ HHPC <- na.locf(HHPC, na.rm = FALSE, maxgap = 1440)
 
 # count missing values by date after replacing NA's with 0 (maxgap=1,440) #
 missing_calendar2 <- HHPC
-missing_calendar2$d_miss <- ifelse(is.na(missing_calendar2$Global), 1, 0)
+missing_calendar2$d_miss <- ifelse(is.na(missing_calendar2$Active), 1, 0)
 missing_calendar2 <- missing_calendar2 %>% 
   group_by(Date) %>%
   dplyr::summarize(missing = sum(d_miss))
 
 # missing data calendar heat map 2 #
-calendarHeat2 <- calendarHeat(HHPC$Date, HHPC$Global, 
+calendarHeat2 <- calendarHeat(HHPC$Date, HHPC$Active, 
                               varname="Global Active Power (kWh)",
                               color="r2b")
 
 # recalculate 'Unregistered' #
 HHPC <- HHPC %>%
-  mutate(Unregistered=Global-Kitchen-Laundry-WHAC)
+  mutate(Unregistered = Active-Kitchen-Laundry-WHAC)
 
 # fix negative values #
 HHPC$Unregistered <- ifelse(HHPC$Unregistered<0, 0, HHPC$Unregistered)
 
 # recalculate 'Efficiency' #
 HHPC <- HHPC %>%
-  mutate(Efficiency=Global/(Voltage*Intensity))
+  mutate(Efficiency = Active/(Voltage*Intensity))
+
+#### 4. Data Preparation for Predictions ####
+
+HHPC_ts <- HHPC %>%
+  mutate(Hour = hour(Date_Time), 
+         Day = day(Date_Time), 
+         Month = month(Date_Time), 
+         Year = year(Date_Time)) %>%
+  dplyr::select(Date_Time, Date, Year, Month, Day, Weekday, Season, Hour, everything())
+
+vars <- c("Active", "Reactive", "Voltage", "Intensity", "Kitchen", "Laundry", "WHAC", "Unregistered")
+
+## 4.1 Data by Hour
+HHPC_hour <- HHPC_ts %>%
+  group_by(Date, Year, Month, Hour) %>%
+  summarise_at(vars(vars), funs(sum, mean)) %>%
+  dplyr::select(Date, Year, Month, Time = Hour, Active = Active_sum, Reactive = Reactive_mean, 
+                Voltage = Voltage_mean, Intensity = Intensity_mean, 
+                Kitchen = Kitchen_sum, Laundry = Laundry_sum, WHAC = WHAC_sum)
+
+## 4.2 Data by Day
+## 4.3 Data by Week
+## 4.4 Data by Month
+## 4.5 Data by Season
+## 4.6 Data by Year
+
+# N #
+if(require("Forecast")=="FALSE"){
+  install.packages("Forecast")
+}
+library(forecast)
+
+HPC_TS <- ts(HPC_monthly, frequency=12, start=c(2007,1))
+HPC_TS
+plot(HPC_TS)
+
+# P #
+####TimeSeries####
+
+install.packages("forecast")
+library("forecast")
+####MONTH####
+HPCMONTHLY <- ts(HPC_my$Global_active_powerKWh,frequency = 12, start=c(2007,1),end=c(2010,12))
+HPCMONTHLY
+plot(HPCMONTHLY)
+DF_TSLM<- data.frame(Global_active_powerKWh = HPCMONTHLY, as.numeric(time(HPCMONTHLY)))
+names(DF_TSLM)<-c("Global_active_powerKWh","time")
+####MODELS####
+####tslm MONTH####
+TSLM <- tslm(Global_active_powerKWh~season + trend,DF_TSLM)
+FC_TSLM <- forecast(TSLM, h=36)
+autoplot(FC_TSLM)
+summary(FC_TSLM)
 
 
