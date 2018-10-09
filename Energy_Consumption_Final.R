@@ -81,9 +81,9 @@ Autumn <- as_date("2008-09-22")
 Seasons <- as_date(format(HHPC$Date_Time, "%2008-%m-%d"))
 
 # Create a 'Season' Column
-HHPC$Season <- ifelse(Seasons >= as_date(Spring) & Seasons < as_date(Summer), "Spring",
-                      ifelse(Seasons >= Summer & Seasons < Autumn, "Summer",
-                             ifelse(Seasons >= Autumn & Seasons < Winter, "Autumn",
+HHPC$Season <- ifelse(Seasons >= as_date(Autumn) & Seasons <= as_date(Winter), "Autumn",
+                      ifelse(Seasons >= Spring & Seasons <= Summer, "Spring",
+                             ifelse(Seasons >= Summer & Seasons < Autumn, "Summer",
                                     "Winter")))
 HHPC$Season <- as.factor(HHPC$Season)
 
@@ -124,6 +124,9 @@ calendarHeat2 <- calendarHeat(HHPC$Date, HHPC$Active,
                               varname="Global Active Power (kWh)",
                               color="r2b")
 
+# replace the remaining NA's with 0 #
+HHPC[is.na(HHPC)] <- 0
+
 # recalculate 'Unregistered' #
 HHPC <- HHPC %>%
   mutate(Unregistered = Active-Kitchen-Laundry-WHAC)
@@ -137,55 +140,145 @@ HHPC <- HHPC %>%
 
 #### 4. Data Preparation for Predictions ####
 
-HHPC_ts <- HHPC %>%
-  mutate(Hour = hour(Date_Time), 
-         Day = day(Date_Time), 
-         Month = month(Date_Time), 
-         Year = year(Date_Time)) %>%
-  dplyr::select(Date_Time, Date, Year, Month, Day, Weekday, Season, Hour, everything())
-
+# select variables #
 vars <- c("Active", "Reactive", "Voltage", "Intensity", "Kitchen", "Laundry", "WHAC", "Unregistered")
+
+# create a new dataset for time-series #
+HHPC$Hour <- hour(HHPC$Date_Time)
+HHPC$Day <- day(HHPC$Date_Time)
+HHPC$Week <- week(HHPC$Date_Time)
+HHPC$Month <- month(HHPC$Date_Time)
+HHPC$Year <- year(HHPC$Date_Time)
+
+HHPC_ts <- HHPC %>%
+  select(Date_Time, Date, Year, Month, Day, Weekday, Season, Hour, Week, everything())
 
 ## 4.1 Data by Hour
 HHPC_hour <- HHPC_ts %>%
-  group_by(Date, Year, Month, Hour) %>%
-  summarise_at(vars(vars), funs(sum, mean)) %>%
-  dplyr::select(Date, Year, Month, Time = Hour, Active = Active_sum, Reactive = Reactive_mean, 
-                Voltage = Voltage_mean, Intensity = Intensity_mean, 
-                Kitchen = Kitchen_sum, Laundry = Laundry_sum, WHAC = WHAC_sum)
+  filter(Year != 2006) %>%
+  group_by(Year, Month, Day, Hour) %>%
+  summarise_at(vars(Active, Reactive, Voltage, Intensity, Kitchen, Laundry, WHAC, Unregistered), 
+               funs(sum))
 
 ## 4.2 Data by Day
+HHPC_day <- HHPC_ts %>%
+  filter(Year != 2006) %>%
+  group_by(Year, Month, Day) %>%
+  summarise_at(vars(Active, Reactive, Voltage, Intensity, Kitchen, Laundry, WHAC, Unregistered), 
+                 funs(sum))
+
 ## 4.3 Data by Week
+HHPC_week <- HHPC_ts %>%
+  filter(Year != 2006) %>%
+  group_by(Year, Month, Week) %>%
+  summarise_at(vars(Active, Reactive, Voltage, Intensity, Kitchen, Laundry, WHAC, Unregistered), 
+               funs(sum))
+
 ## 4.4 Data by Month
+HHPC_month <- HHPC_ts %>%
+  filter(Year != 2006) %>%
+  group_by(Year, Month) %>%
+  summarise_at(vars(Active, Reactive, Voltage, Intensity, Kitchen, Laundry, WHAC, Unregistered), 
+               funs(sum))
+
 ## 4.5 Data by Season
+HHPC_season <- HHPC_ts %>%
+  filter(Year != 2006) %>%
+  group_by(Year, Month, Season) %>%
+  summarise_at(vars(Active, Reactive, Voltage, Intensity, Kitchen, Laundry, WHAC, Unregistered), 
+               funs(sum))
+
 ## 4.6 Data by Year
+HHPC_year <- HHPC_ts %>%
+  filter(Year != 2006) %>%
+  group_by(Year) %>%
+  summarise_at(vars(Active, Reactive, Voltage, Intensity, Kitchen, Laundry, WHAC, Unregistered), 
+               funs(sum))
 
-# N #
-if(require("Forecast")=="FALSE"){
-  install.packages("Forecast")
+#### 5. Time-Series and Predictions ####
+
+# download packages #
+if(require("forecast")=="FALSE"){
+  install.packages("forecast")
 }
-library(forecast)
-
-HPC_TS <- ts(HPC_monthly, frequency=12, start=c(2007,1))
-HPC_TS
-plot(HPC_TS)
-
-# P #
-####TimeSeries####
-
-install.packages("forecast")
 library("forecast")
-####MONTH####
-HPCMONTHLY <- ts(HPC_my$Global_active_powerKWh,frequency = 12, start=c(2007,1),end=c(2010,12))
-HPCMONTHLY
-plot(HPCMONTHLY)
-DF_TSLM<- data.frame(Global_active_powerKWh = HPCMONTHLY, as.numeric(time(HPCMONTHLY)))
-names(DF_TSLM)<-c("Global_active_powerKWh","time")
-####MODELS####
-####tslm MONTH####
-TSLM <- tslm(Global_active_powerKWh~season + trend,DF_TSLM)
-FC_TSLM <- forecast(TSLM, h=36)
-autoplot(FC_TSLM)
-summary(FC_TSLM)
 
+# Monthly TS #
 
+ts_month <- ts(HHPC_month$Active, frequency = 12, start = c(2007, 1), end = c(2010, 20))
+ts_month
+plot(ts_month)
+plot(decompose(ts_month))
+
+ts_monthCom <- decompose(ts_month)
+ts_monthAdj <- ts_month - ts_monthCom$seasonal
+plot(ts_monthAdj)
+
+adf.test(ts_month)
+
+ts_monthdf <- data.frame(Active = ts_month, as.numeric(time(ts_month)))
+names(ts_monthdf) <- c("Active", "Time")
+
+tsoutliers(ts_month)
+
+# Weekly TS #
+
+ts_week <- ts(HHPC_week$Active, frequency = 52, start= c(2007, 1), end = c(2010, 48))
+ts_week
+plot(ts_week)
+plot(decompose(ts_week))
+
+ts_weekCom <- decompose(ts_week)
+ts_weekAdj <- ts_week - ts_weekCom$seasonal
+plot(ts_weekAdj)
+
+adf.test(ts_week)
+
+ts_weekdf <- data.frame(Active = ts_week, as.numeric(time(ts_week)))
+names(ts_monthdf) <- c("Active", "Time")
+
+tsoutliers(ts_week)
+
+## 5.1 Holt-Winters
+
+# HW Month #
+HW_month <- HoltWinters(x = ts_month)
+HW_monthPred <- forecast(HW_month, h = 15)
+autoplot(HW_monthPred)
+summary(HW_monthPred)
+
+# HW Week #
+HW_week <- HoltWinters(x = ts_week, seasonal = "additive")
+HW_weekPred <- forecast(HW_week, h = 50)
+autoplot(HW_weekPred, ylim = c(0, 4000))
+summary(HW_weekPred)
+
+## 5.2 ARIMA
+
+# ARIMA Month #
+auto.arima(ts_month)
+
+arima_month <- arima(ts_month, order = c(0,0,0), 
+                     seasonal = list(order = c(1,1,0), period = 12))
+arima_month.pre <- forecast(arima_month, h=20)
+plot(arima_month.pre)
+summary(arima_month.pre)
+
+# ARIMA Week #
+auto.arima(ts_week)
+arima_week <- arima(ts_week, order = c(1, 0, 2),
+                    seasonal = list(order = c(1, 0, 0), period = 52))
+arima_weekPred <- forecast(arima_week, h = 20)
+plot(arima_weekPred)
+
+## 5.3 Naiïve
+
+# Naiïve Month #
+snaive_month <- snaive(ts_month, h = 20)
+plot(snaive_month)
+summary(snaive_month)
+
+# Naiïve Week #
+snaive_week <- snaive(ts_week, h = 20)
+plot(snaive_week)
+summary(snaive_week)
