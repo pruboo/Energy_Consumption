@@ -174,6 +174,15 @@ HHPC_week <- HHPC_ts %>%
   summarise_at(vars(Active, Reactive, Voltage, Intensity, Kitchen, Laundry, WHAC, Unregistered), 
                funs(sum))
 
+## Create 'Sub-meters' vs 'Time' plot for 2007
+plot(x = HHPC_week$Week, y = HHPC_week$Active, type = "n", 
+     xlab = "", ylab = "Energy Sub Metering")
+lines(x = HHPC_week$Week, y = HHPC_week$Kitchen)
+lines(x = HHPC_week$Week, y = HHPC_week$Laundry, col = "red")
+lines(x = HHPC_week$Week, y = HHPC_week$WHAC, col = "blue")
+legend("topright", legend = c("Kitchen", "Laundry", "WHAC"), 
+       lty = 1, col = c("black", "red", "blue"))
+
 ## 4.4 Data by Month
 HHPC_month <- HHPC_ts %>%
   filter(Year != 2006) %>%
